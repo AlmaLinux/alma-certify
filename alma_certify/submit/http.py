@@ -9,6 +9,27 @@ import urllib.request
 import uuid
 from typing import Any, Dict, Optional, Tuple
 
+from alma_certify import __version__
+
+# What this suite calls itself on the wire.
+#
+# Nothing set one before, so every request went out as ``Python-urllib/3.9`` on AlmaLinux 9 and
+# ``Python-urllib/3.12`` on 8 and 10 - urllib's own default. That is one of the most widely
+# blocked user agents there is: it appears in Cloudflare's managed bot rules and in most
+# off-the-shelf WAF configurations, and a catalog behind one of those refuses the submission
+# before it reaches the application. Reported as exactly that.
+#
+# It also could not be allowed *through* safely. Whoever runs the catalog had nothing to permit
+# but "Python-urllib/3.9", which is every Python script on the internet rather than this suite.
+# A product name and version is something an operator can allow precisely, and something their
+# logs can attribute.
+#
+# **No "Python-urllib" anywhere in it, deliberately.** Those rules match the substring, so
+# carrying the underlying stack along for diagnostics would re-earn the ban the moment it was
+# lifted. The ``+URL`` is the long-standing convention for telling an operator who is calling
+# and where to read about it.
+USER_AGENT = "alma-certify/%s (+https://github.com/AlmaLinux/alma-certify)" % __version__
+
 # Whether to verify the server's certificate. True is the only value anything should ship with; the
 # other exists because a self-signed certificate is a normal thing for a staging or dev catalog to
 # have, and refusing to talk to one at all means the people testing the suite against a dev server
@@ -50,6 +71,10 @@ def _context() -> ssl.SSLContext:
 
 
 def _open(req: urllib.request.Request, timeout: float) -> Tuple[int, Any]:
+    # Set here rather than beside each ``Accept``: every request in this module goes through
+    # this function, so a fourth caller added later cannot forget it and quietly go back to
+    # identifying itself as urllib.
+    req.add_header("User-Agent", USER_AGENT)
     ctx = _context()
     try:
         with urllib.request.urlopen(req, timeout=timeout, context=ctx) as resp:
